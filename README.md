@@ -1,4 +1,4 @@
-# Polar ECG Viewer
+# Real-time Polar H10 ECG Viewer & Recorder
 
 Real-time ECG visualization and recording tool for Polar H10 heart rate monitor. Built for teaching psychophysiology and conducting research with precise ECG data collection.
 

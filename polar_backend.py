@@ -13,7 +13,9 @@ from collections import deque
 import numpy as np
 from scipy.signal import find_peaks
 from bleak import BleakScanner
-from polar_python import PolarDevice, MeasurementSettings, SettingType, ECGData
+from polar_python.device import PolarDevice
+from polar_python.models import MeasurementSettings, ECGData
+from polar_python.constants import PmdMeasurementType, PmdSettingType
 
 try:
     from config import DEBUG_PEAK_DETECTION, BPM_SMOOTHING_WINDOW, ECG_BUFFER_SECONDS
@@ -111,8 +113,8 @@ class PolarH10Handler:
         if device is None:
             return False
             
-        # Connect to device
-        self.polar_device = PolarDevice(device, self._data_callback)
+        # Connect to device (new API: no callback in constructor)
+        self.polar_device = PolarDevice(device)
         await self.polar_device.__aenter__()
         
         return True
@@ -127,17 +129,12 @@ class PolarH10Handler:
         if self.polar_device is None:
             return False
             
-        # Configure ECG settings
-        ecg_settings = MeasurementSettings(
-            measurement_type="ECG",
-            settings=[
-                SettingType(type="SAMPLE_RATE", values=[self.sample_rate]),
-                SettingType(type="RESOLUTION", values=[14]),
-            ],
+        # Start ECG stream (new API: callback + params passed directly)
+        await self.polar_device.start_ecg_stream(
+            ecg_callback=self._data_callback,
+            sample_rate=self.sample_rate,
+            resolution=14,
         )
-        
-        # Start streaming
-        await self.polar_device.start_stream(ecg_settings)
         self.is_streaming = True
         self.start_time = time.time()
         
@@ -146,7 +143,7 @@ class PolarH10Handler:
     async def stop_streaming(self):
         """Stop ECG streaming"""
         if self.polar_device and self.is_streaming:
-            await self.polar_device.stop_stream("ECG")
+            await self.polar_device.stop_ecg_stream()
             self.is_streaming = False
             
     async def disconnect(self):
@@ -155,15 +152,11 @@ class PolarH10Handler:
             await self.polar_device.__aexit__(None, None, None)
             self.polar_device = None
             
-    def _data_callback(self, data):
+    def _data_callback(self, data: ECGData):
         """
-        Internal callback for receiving data from Polar device
-        
-        Args:
-            data: ECGData from polar-python
+        Internal callback for receiving ECG data from Polar device.
+        Called directly by polar_python with ECGData (new API).
         """
-        if not isinstance(data, ECGData):
-            return
             
         # Convert to ECGSample objects with timestamps
         current_time = time.time()

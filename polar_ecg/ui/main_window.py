@@ -60,11 +60,13 @@ class MainWindow(QMainWindow):
         settings: Settings,
         custom_source: Any | None = None,
         custom_device_info: DeviceInfo | None = None,
+        enable_lsl: bool = False,
     ):
         super().__init__()
         self.cfg = settings
         self.custom_source = custom_source
         self.custom_device_info = custom_device_info
+        self.enable_lsl = enable_lsl
 
         # Thread-safe runner & bridge signals
         self.runner = AsyncRunner()
@@ -78,6 +80,7 @@ class MainWindow(QMainWindow):
         # Core session
         self.session = Session(
             settings=self.cfg,
+            enable_lsl=self.enable_lsl,
             on_frame_ready=lambda f: self.bridge.frame_ready.emit(f),
             on_peak=lambda p: self.bridge.peak_detected.emit(p),
             on_device_hr=lambda hr: self.bridge.device_hr.emit(hr),
@@ -180,6 +183,12 @@ class MainWindow(QMainWindow):
         self.device_hr_label.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
         self.device_hr_label.setStyleSheet("color: #0288D1;")
         bpm_toolbar.addWidget(self.device_hr_label)
+
+        bpm_toolbar.addSpacing(15)
+        self.overlay_hr_toggle = QCheckBox("Overlay Polar HR")
+        self.overlay_hr_toggle.setChecked(False)
+        self.overlay_hr_toggle.toggled.connect(self._on_toggle_overlay_hr)
+        bpm_toolbar.addWidget(self.overlay_hr_toggle)
 
         bpm_layout.addLayout(bpm_toolbar)
 
@@ -495,6 +504,9 @@ class MainWindow(QMainWindow):
     def _on_toggle_rpeaks(self, checked: bool) -> None:
         self.ecg_plot.set_rpeaks_visible(checked)
 
+    def _on_toggle_overlay_hr(self, checked: bool) -> None:
+        self.bpm_plot.set_device_hr_visible(checked)
+
     def _on_add_average_line(self) -> None:
         avg = self.bpm_plot.add_average_line()
         if avg is not None:
@@ -520,6 +532,7 @@ class MainWindow(QMainWindow):
 
     def _handle_device_hr(self, hr: DeviceHR) -> None:
         self.device_hr_label.setText(f"Polar HR: {hr.hr_bpm}")
+        self.bpm_plot.add_device_hr(self.last_session_t, hr)
 
     def _handle_state_changed(self, state_str: str) -> None:
         try:

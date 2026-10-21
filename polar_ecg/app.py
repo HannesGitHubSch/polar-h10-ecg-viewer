@@ -75,6 +75,7 @@ def main():
         settings=settings,
         custom_source=custom_source,
         custom_device_info=custom_device_info,
+        enable_lsl=args.lsl,
     )
     window.show()
 

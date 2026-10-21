@@ -10,6 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from polar_ecg.detection import RPeakDetector
+from polar_ecg.lsl_out import LslOutletManager
 from polar_ecg.models import DeviceHR, DeviceInfo, Event, RawFrame, RPeak, TimedFrame
 from polar_ecg.recording import Recorder, RecordingSummary
 from polar_ecg.settings import Settings
@@ -28,6 +29,7 @@ class Session:
     def __init__(
         self,
         settings: Settings | None = None,
+        enable_lsl: bool | None = None,
         on_frame_ready: Callable[[TimedFrame], None] | None = None,
         on_peak: Callable[[RPeak], None] | None = None,
         on_device_hr: Callable[[DeviceHR], None] | None = None,
@@ -36,6 +38,8 @@ class Session:
         on_error: Callable[[str], None] | None = None,
     ):
         self._cfg = settings if settings is not None else Settings()
+        self._enable_lsl = enable_lsl if enable_lsl is not None else self._cfg.LSL_ENABLED
+        self._lsl: LslOutletManager | None = None
         self._on_frame_ready = on_frame_ready
         self._on_peak = on_peak
         self._on_device_hr = on_device_hr
@@ -71,6 +75,10 @@ class Session:
     def clock(self) -> SampleClock:
         return self._clock
 
+    @property
+    def lsl(self) -> LslOutletManager | None:
+        return self._lsl
+
     def set_source(self, source: Source, device_info: DeviceInfo | None = None) -> None:
         """Set or swap the active data source."""
         self._source = source
@@ -89,6 +97,11 @@ class Session:
         self._last_frame_mono = time.monotonic()
         self._signal_is_stalled = False
 
+        if self._enable_lsl and self._lsl is None:
+            dev_name = self._device_info.name if self._device_info else "Polar H10"
+            dev_addr = self._device_info.address if self._device_info else "polar_h10"
+            self._lsl = LslOutletManager(device_name=dev_name, device_id=dev_addr)
+
         await self._source.start()
         self._is_streaming = True
 
@@ -106,6 +119,10 @@ class Session:
             return
 
         self._is_streaming = False
+
+        if self._lsl:
+            self._lsl.close()
+            self._lsl = None
 
         if self._watchdog_task and not self._watchdog_task.done():
             self._watchdog_task.cancel()
@@ -156,6 +173,8 @@ class Session:
             source=source,
         )
         self._recorder.add_event(event)
+        if self._lsl:
+            self._lsl.push_event(event)
         logger.info("Event added: %s at t=%.2fs (%s)", label, event_t, source)
 
     def on_raw_frame(self, raw: RawFrame) -> None:
@@ -195,7 +214,13 @@ class Session:
             for p in peaks:
                 self._recorder.submit_peak(p)
 
-        # 4. Notify UI
+        # 4. Push to LSL if active
+        if self._lsl:
+            self._lsl.push_frame(timed)
+            for p in peaks:
+                self._lsl.push_peak(p)
+
+        # 5. Notify UI
         if self._on_frame_ready:
             self._on_frame_ready(timed)
 
@@ -207,6 +232,8 @@ class Session:
         """Callback for native Polar HR / RR measurement."""
         if self._recorder.is_recording:
             self._recorder.submit_hr(hr)
+        if self._lsl:
+            self._lsl.push_device_hr(hr)
         if self._on_device_hr:
             self._on_device_hr(hr)
 

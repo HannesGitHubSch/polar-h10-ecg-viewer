@@ -6,7 +6,7 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import Qt
 
-from polar_ecg.models import RPeak, TimedFrame
+from polar_ecg.models import DeviceHR, RPeak, TimedFrame
 from polar_ecg.ringbuffer import RingBuffer
 from polar_ecg.settings import Settings
 
@@ -138,20 +138,46 @@ class BpmPlotWidget:
             symbol="o",
             symbolSize=5,
             symbolBrush=pg.mkBrush(self.cfg.COLOR_BPM_LINE + "CC"),
-            name="BPM",
+            name="Detected BPM",
         )
+
+        # Optional overlay of Polar device native HR / RR-derived BPM
+        self.device_hr_buffer = RingBuffer(capacity=self.cfg.BPM_HISTORY_POINTS)
+        self.device_hr_curve = self.widget.plot(
+            pen=pg.mkPen(color="#0288D1", width=1.5, style=Qt.PenStyle.DashLine),
+            symbol="t",
+            symbolSize=6,
+            symbolBrush=pg.mkBrush("#0288D1"),
+            name="Polar Device HR",
+        )
+        self.device_hr_curve.setVisible(False)
 
         self.average_lines: list[pg.InfiniteLine] = []
 
     def clear(self) -> None:
         self.bpm_buffer.clear()
         self.bpm_curve.clear()
+        self.device_hr_buffer.clear()
+        self.device_hr_curve.clear()
         self.clear_average_lines()
+
+    def set_device_hr_visible(self, visible: bool) -> None:
+        self.device_hr_curve.setVisible(visible)
 
     def add_peak(self, peak: RPeak) -> None:
         """Record instantaneous smoothed BPM at peak time."""
         if peak.bpm is not None:
             self.bpm_buffer.append(peak.t_session_s, peak.bpm)
+
+    def add_device_hr(self, t_session: float, hr: DeviceHR) -> None:
+        """Record native Polar HR / RR in overlay buffer."""
+        if hr.rr_ms:
+            for rr in hr.rr_ms:
+                if rr > 0:
+                    bpm = 60000.0 / rr
+                    self.device_hr_buffer.append(t_session, bpm)
+        elif hr.hr_bpm > 0:
+            self.device_hr_buffer.append(t_session, float(hr.hr_bpm))
 
     def add_average_line(self) -> float | None:
         """Calculate recent average BPM and plot a horizontal dashed line."""
@@ -187,11 +213,18 @@ class BpmPlotWidget:
 
     def redraw(self, current_session_t: float) -> None:
         """Update BPM curve and adjust Y-range to visible range with padding."""
+        if len(self.bpm_buffer) > 0:
+            t_arr, bpm_arr = self.bpm_buffer.view()
+            self.bpm_curve.setData(t_arr, bpm_arr)
+        else:
+            t_arr, bpm_arr = np.array([]), np.array([])
+
+        if self.device_hr_curve.isVisible() and len(self.device_hr_buffer) > 0:
+            t_dev, bpm_dev = self.device_hr_buffer.view()
+            self.device_hr_curve.setData(t_dev, bpm_dev)
+
         if len(self.bpm_buffer) == 0:
             return
-
-        t_arr, bpm_arr = self.bpm_buffer.view()
-        self.bpm_curve.setData(t_arr, bpm_arr)
 
         # Dynamic vertical range scaling bounded by visible window
         t_delayed = current_session_t - self.cfg.DISPLAY_DELAY_S

@@ -262,9 +262,15 @@ class RPeakDetector:
                     # Too close to previous beat (refractory period)
                     continue
 
-                # T-wave discrimination: candidate occurring 270-380ms after QRS with flat slope
-                if rri_ms < 380.0 and self._prev_qrs_slope > 0:
-                    if cand_slope < 0.5 * self._prev_qrs_slope:
+                # T-wave discrimination: candidate occurring within 0.52 * expected_rr (up to 520 ms) after QRS with flat slope
+                expected_rr_ms = (
+                    np.median(self._rr_history)
+                    if len(self._rr_history) >= 2
+                    else 800.0
+                )
+                twave_window_ms = max(360.0, min(520.0, 0.52 * expected_rr_ms))
+                if rri_ms < twave_window_ms and self._prev_qrs_slope > 0:
+                    if cand_slope < 0.55 * self._prev_qrs_slope:
                         # Classify as T-wave: update noise floor, do not accept as QRS
                         self._npki = 0.875 * self._npki + 0.125 * min(cand_mwi, self._spki * 0.4)
                         self._update_thresholds()
@@ -277,14 +283,9 @@ class RPeakDetector:
                     flags.add("rejected_range")
                     self._last_accepted_idx = refined_idx
                     self._last_cand_idx = cand_idx
-                elif len(self._rr_history) >= 4 and rri_ms > 1.5 * np.median(list(self._rr_history)[-8:]):
-                    flags.add("suspect_missed")
-                    self._last_accepted_idx = refined_idx
-                    self._last_cand_idx = cand_idx
-                    self._spki = 0.875 * self._spki + 0.125 * capped_mwi
-                    self._prev_qrs_slope = 0.875 * self._prev_qrs_slope + 0.125 * cand_slope
-                    self._update_thresholds()
                 else:
+                    if len(self._rr_history) >= 4 and rri_ms > 1.66 * np.median(list(self._rr_history)[-8:]):
+                        flags.add("suspect_missed")
                     self._last_accepted_idx = refined_idx
                     self._last_cand_idx = cand_idx
                     self._rr_history.append(rri_ms)

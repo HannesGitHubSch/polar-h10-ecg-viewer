@@ -230,3 +230,30 @@ def test_detection_recovers_after_huge_artifact():
 
     # In 15 seconds at 60 BPM, there are ~15 beats. The detector must recover and detect them.
     assert len(peaks_after) >= 12, f"Expected detector to recover after artifact, got {len(peaks_after)} peaks"
+
+
+def test_detection_bpm_adapts_to_heart_rate_slowdown():
+    from polar_ecg.synth import synth_frames
+
+    fs = 130.0
+    # Start at fast 140 BPM, then slow down to resting 60 BPM
+    sig_fast, _ = synth_ecg(duration_s=10.0, fs=fs, hr=140.0, seed=50)
+    sig_slow, _ = synth_ecg(duration_s=15.0, fs=fs, hr=60.0, seed=51)
+    sig = np.concatenate([sig_fast, sig_slow])
+
+    frames = synth_frames(sig, fs=fs, chunk_size=73)
+    det = RPeakDetector(fs=fs)
+    all_peaks = []
+    sample_idx = 0
+
+    for f in frames:
+        p = det.process(sample_idx, f.voltages_uv, lambda idx: idx / fs)
+        all_peaks.extend(p)
+        sample_idx += len(f.voltages_uv)
+
+    # Inspect BPM values at the end of the slow segment
+    late_peaks = [p for p in all_peaks if p.t_session_s > 20.0 and p.bpm is not None]
+    assert len(late_peaks) > 0, "Expected peaks in the slow segment"
+    final_bpm = late_peaks[-1].bpm
+    # BPM must accurately reflect ~60 BPM, not remain trapped at 140 BPM
+    assert 55.0 <= final_bpm <= 65.0, f"Expected final BPM around 60, got {final_bpm:.1f}"

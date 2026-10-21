@@ -38,7 +38,7 @@ class Settings:
     DISPLAY_FPS: int = 30
     ECG_BUFFER_S: float = 30.0
     BPM_HISTORY_POINTS: int = 500
-    SHOW_RPEAKS_DEFAULT: bool = False
+    SHOW_RPEAKS_DEFAULT: bool = True
     BPM_Y_AXIS_PADDING: float = 10.0
     BPM_AVERAGE_WINDOW_S: float = 10.0
 

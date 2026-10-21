@@ -170,6 +170,11 @@ class RPeakDetector:
         if keep_from > 0:
             self._mwi_buffer = self._mwi_buffer[keep_from:]
             self._mwi_first_idx += keep_from
+        elif len(self._mwi_buffer) > int(4.0 * self._fs):
+            # Prevent unbounded buffer growth if no peaks are confirmed for a long time
+            drop_n = len(self._mwi_buffer) - int(2.0 * self._fs)
+            self._mwi_buffer = self._mwi_buffer[drop_n:]
+            self._mwi_first_idx += drop_n
 
         # 6. Initial learning phase (first 2.0 seconds)
         if not self._is_initialized:
@@ -181,7 +186,29 @@ class RPeakDetector:
 
             return []
 
-        # 7. Evaluate candidates
+        # 7. Adaptive threshold decay if beats have been missed (prevents lock-out after artifacts)
+        if self._last_accepted_idx is not None:
+            avg_rr_samples = (
+                np.mean(self._rr_history) * self._fs / 1000.0
+                if len(self._rr_history) >= 2
+                else 0.8 * self._fs
+            )
+            samples_since_last = (first_index + n) - self._last_accepted_idx
+            if samples_since_last > 1.66 * avg_rr_samples:
+                # Smooth decay of signal peak estimate towards noise floor
+                self._spki = max(self._spki * 0.95, self._npki * 1.5, 1e-3)
+                self._update_thresholds()
+
+            # Hard fallback reset if no beat detected for > 3.0 seconds
+            if samples_since_last > 3.0 * self._fs and len(self._mwi_buffer) >= int(self._fs):
+                recent_mwi = self._mwi_buffer[-int(2.0 * self._fs) :]
+                p90 = float(np.percentile(recent_mwi, 90))
+                p20 = float(np.percentile(recent_mwi, 20))
+                self._spki = max(p90 * 0.8, 1e-3)
+                self._npki = min(max(p20, 1e-4), self._spki * 0.3)
+                self._update_thresholds()
+
+        # 8. Evaluate candidates
         detected_peaks: list[RPeak] = []
 
         for cand_idx, cand_mwi in confirmed_candidates:
@@ -210,17 +237,17 @@ class RPeakDetector:
                     is_searchback = True
 
             if not is_qrs:
-                # Update noise threshold
-                self._npki = 0.875 * self._npki + 0.125 * cand_mwi
+                # Update noise threshold (bounded by signal ceiling)
+                self._npki = 0.875 * self._npki + 0.125 * min(cand_mwi, self._spki * 0.4)
                 self._update_thresholds()
                 continue
 
-            # 8. Fiducial refinement on raw signal
-            refined_idx, peak_voltage = self._find_raw_fiducial(cand_idx)
+            # 9. Fiducial refinement on raw signal
+            refined_idx, peak_voltage, cand_slope = self._find_raw_fiducial(cand_idx)
             if refined_idx is None:
                 continue
 
-            # 9. RR gating before updating state
+            # 10. RR gating & T-wave discrimination before updating state
             flags = set()
             if is_searchback:
                 flags.add("searchback")
@@ -232,8 +259,19 @@ class RPeakDetector:
                 rri_ms = ((refined_idx - self._last_accepted_idx) / self._fs) * 1000.0
 
                 if rri_ms < self._rr_min_ms:
-                    # Too close to previous beat (duplicate candidate or severe noise)
+                    # Too close to previous beat (refractory period)
                     continue
+
+                # T-wave discrimination: candidate occurring 270-380ms after QRS with flat slope
+                if rri_ms < 380.0 and self._prev_qrs_slope > 0:
+                    if cand_slope < 0.5 * self._prev_qrs_slope:
+                        # Classify as T-wave: update noise floor, do not accept as QRS
+                        self._npki = 0.875 * self._npki + 0.125 * min(cand_mwi, self._spki * 0.4)
+                        self._update_thresholds()
+                        continue
+
+                # Cap single-beat MWI contribution to prevent huge artifact lock-outs
+                capped_mwi = min(cand_mwi, self._spki * 2.5) if self._spki > 0 else cand_mwi
 
                 if rri_ms > self._rr_max_ms:
                     flags.add("rejected_range")
@@ -243,14 +281,16 @@ class RPeakDetector:
                     flags.add("suspect_missed")
                     self._last_accepted_idx = refined_idx
                     self._last_cand_idx = cand_idx
-                    self._spki = 0.875 * self._spki + 0.125 * cand_mwi
+                    self._spki = 0.875 * self._spki + 0.125 * capped_mwi
+                    self._prev_qrs_slope = 0.875 * self._prev_qrs_slope + 0.125 * cand_slope
                     self._update_thresholds()
                 else:
                     self._last_accepted_idx = refined_idx
                     self._last_cand_idx = cand_idx
                     self._rr_history.append(rri_ms)
                     self._accepted_rris.append(rri_ms)
-                    self._spki = 0.875 * self._spki + 0.125 * cand_mwi
+                    self._spki = 0.875 * self._spki + 0.125 * capped_mwi
+                    self._prev_qrs_slope = 0.875 * self._prev_qrs_slope + 0.125 * cand_slope
                     self._update_thresholds()
 
                 if self._accepted_rris:
@@ -261,7 +301,9 @@ class RPeakDetector:
                 if self._after_gap:
                     flags.add("after_gap")
                     self._after_gap = False
-                self._spki = 0.875 * self._spki + 0.125 * cand_mwi
+                capped_mwi = min(cand_mwi, self._spki * 2.5) if self._spki > 0 else cand_mwi
+                self._spki = 0.875 * self._spki + 0.125 * capped_mwi
+                self._prev_qrs_slope = cand_slope
                 self._update_thresholds()
 
             t_session = index_to_t(refined_idx)
@@ -279,7 +321,8 @@ class RPeakDetector:
         return detected_peaks
 
     def _update_thresholds(self) -> None:
-        """Update detection thresholds THR1 and THR2."""
+        """Update detection thresholds THR1 and THR2 with noise ceiling."""
+        self._npki = min(self._npki, 0.45 * self._spki)
         self._thr1 = self._npki + 0.25 * (self._spki - self._npki)
         self._thr2 = 0.5 * self._thr1
 
@@ -307,22 +350,27 @@ class RPeakDetector:
             # If negative excursion is larger, inverted lead
             self._polarity = -1.0 if neg_dev > 1.2 * pos_dev else 1.0
 
-    def _find_raw_fiducial(self, cand_mwi_idx: int) -> tuple[float | None, float]:
+    def _find_raw_fiducial(self, cand_mwi_idx: int) -> tuple[float | None, float, float]:
         """
         Locate R-peak in the raw ECG signal around the MWI candidate index.
         Uses parabolic interpolation for fractional sample precision.
+        Returns (best_sample_idx, peak_voltage, max_slope).
         """
         search_start = cand_mwi_idx - int(0.25 * self._fs)
         search_end = cand_mwi_idx + int(0.05 * self._fs)
 
         if not self._raw_indices:
-            return None, 0.0
+            return None, 0.0, 0.0
 
         buf_first = self._raw_indices[0]
         buf_last = self._raw_indices[-1]
 
-        if search_start < buf_first or search_end > buf_last:
-            return None, 0.0
+        # Clamp search window to available raw buffer rather than dropping edge candidates
+        search_start = max(buf_first, search_start)
+        search_end = min(buf_last, search_end)
+
+        if search_start >= search_end:
+            return None, 0.0, 0.0
 
         raw_idx_arr = np.array(self._raw_indices)
         raw_vol_arr = np.array(self._raw_voltages)
@@ -332,13 +380,17 @@ class RPeakDetector:
         sub_voltages = raw_vol_arr[mask]
 
         if len(sub_voltages) < 3:
-            return None, 0.0
+            return None, 0.0, 0.0
 
         oriented_voltages = sub_voltages * self._polarity
         max_pos = np.argmax(oriented_voltages)
 
         best_sample_idx = float(sub_indices[max_pos])
         peak_voltage = float(sub_voltages[max_pos])
+
+        # Compute max slope near the peak for T-wave discrimination
+        slope_w = oriented_voltages[max(0, max_pos - 5) : min(len(oriented_voltages), max_pos + 6)]
+        cand_slope = float(np.max(np.abs(np.diff(slope_w)))) if len(slope_w) > 1 else 1.0
 
         if 0 < max_pos < len(sub_voltages) - 1:
             y1 = float(oriented_voltages[max_pos - 1])
@@ -354,7 +406,7 @@ class RPeakDetector:
                 v3 = float(sub_voltages[max_pos + 1])
                 peak_voltage = v2 - 0.25 * (v1 - v3) * delta
 
-        return best_sample_idx, peak_voltage
+        return best_sample_idx, peak_voltage, cand_slope
 
 
     def flush(self, index_to_t: Callable[[float], float]) -> list[RPeak]:
@@ -370,7 +422,7 @@ class RPeakDetector:
             abs_sample_idx = self._mwi_first_idx + p_idx
             amp = self._mwi_buffer[p_idx]
             if amp >= self._thr1:
-                refined_idx, peak_voltage = self._find_raw_fiducial(abs_sample_idx)
+                refined_idx, peak_voltage, _ = self._find_raw_fiducial(abs_sample_idx)
                 if refined_idx is not None:
                     if self._last_accepted_idx is not None:
                         rri_ms = ((refined_idx - self._last_accepted_idx) / self._fs) * 1000.0

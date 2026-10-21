@@ -97,6 +97,7 @@ class MainWindow(QMainWindow):
         self.current_state = AppState.IDLE
         self.recording_base_path: Path | None = None
         self.last_frame_mono = 0.0
+        self.last_peak_mono = 0.0
         self.last_session_t = 0.0
 
         self._init_ui()
@@ -431,6 +432,9 @@ class MainWindow(QMainWindow):
         if not self.session.is_streaming:
             self.ecg_plot.clear()
             self.bpm_plot.clear()
+            self.last_peak_mono = 0.0
+            self.bpm_label.setText("Detected BPM: --")
+            self.device_hr_label.setText("Polar HR: --")
 
             def _on_started(_):
                 self.apply_state(AppState.STREAMING)
@@ -532,6 +536,7 @@ class MainWindow(QMainWindow):
         self.missing_label.setText(f"Missing samples: {self.session.clock.total_missing}")
 
     def _handle_peak_detected(self, peak: RPeak) -> None:
+        self.last_peak_mono = time.monotonic()
         self.ecg_plot.add_peak(peak)
         self.bpm_plot.add_peak(peak)
         if peak.bpm is not None:
@@ -570,6 +575,10 @@ class MainWindow(QMainWindow):
             now_mono = time.monotonic()
             dt = now_mono - self.last_frame_mono if self.last_frame_mono > 0 else 0.0
             smooth_session_t = self.last_session_t + dt
+
+            # If no heart beat detected for > 3.0s, indicate staleness
+            if self.last_peak_mono > 0 and (now_mono - self.last_peak_mono) > 3.0:
+                self.bpm_label.setText("Detected BPM: --")
 
             self.ecg_plot.redraw(smooth_session_t)
             self.bpm_plot.redraw(smooth_session_t)

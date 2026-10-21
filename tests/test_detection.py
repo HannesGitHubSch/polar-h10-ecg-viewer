@@ -203,3 +203,30 @@ def test_detection_neurokit_agreement():
     se, ppv, _ = evaluate_detection(our_filt, nk_filt, tol_samples=6)
     assert se >= 0.95
     assert ppv >= 0.95
+
+
+def test_detection_recovers_after_huge_artifact():
+    from polar_ecg.synth import synth_frames
+
+    fs = 130.0
+    sig1, _ = synth_ecg(duration_s=15.0, fs=fs, hr=60.0, seed=42)
+    # 8000 µV motion artifact spike
+    artifact = np.zeros(int(1.5 * fs))
+    artifact[10:15] = 8000.0
+    sig2, _ = synth_ecg(duration_s=15.0, fs=fs, hr=60.0, seed=43)
+    sig = np.concatenate([sig1, artifact, sig2])
+
+    frames = synth_frames(sig, fs=fs, chunk_size=73)
+    det = RPeakDetector(fs=fs)
+    peaks_after = []
+    sample_idx = 0
+
+    for f in frames:
+        t_start = sample_idx / fs
+        p = det.process(sample_idx, f.voltages_uv, lambda idx: idx / fs)
+        if t_start > 17.0:
+            peaks_after.extend(p)
+        sample_idx += len(f.voltages_uv)
+
+    # In 15 seconds at 60 BPM, there are ~15 beats. The detector must recover and detect them.
+    assert len(peaks_after) >= 12, f"Expected detector to recover after artifact, got {len(peaks_after)} peaks"

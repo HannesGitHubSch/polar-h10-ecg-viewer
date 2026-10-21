@@ -34,6 +34,9 @@ class Source(Protocol):
     async def stop(self) -> None:
         ...
 
+    async def disconnect(self) -> None:
+        ...
+
 
 class DeviceSource:
     """
@@ -79,10 +82,11 @@ class DeviceSource:
         self.on_hr(hr)
 
     async def start(self) -> None:
-        await self.h10.connect(
-            self.ble_device,
-            on_disconnect=lambda: self.on_disconnect("BLE connection lost"),
-        )
+        if not self.h10.is_connected:
+            await self.h10.connect(
+                self.ble_device,
+                on_disconnect=lambda: self.on_disconnect("BLE connection lost"),
+            )
         await self.h10.start_ecg(self._ecg_callback, sample_rate=self.sample_rate)
         if self.stream_hr:
             try:
@@ -91,6 +95,9 @@ class DeviceSource:
                 logger.warning("Could not start HR stream on Polar device: %s", e)
 
     async def stop(self) -> None:
+        await self.h10.stop_all()
+
+    async def disconnect(self) -> None:
         await self.h10.disconnect()
 
 
@@ -141,6 +148,9 @@ class SimulatedSource:
             except asyncio.CancelledError:
                 pass
             self._task = None
+
+    async def disconnect(self) -> None:
+        await self.stop()
 
     async def _generator_loop(self) -> None:
         sig, _true_r = synth_ecg(
@@ -226,6 +236,9 @@ class ReplaySource:
             except asyncio.CancelledError:
                 pass
             self._task = None
+
+    async def disconnect(self) -> None:
+        await self.stop()
 
     async def _replay_loop(self) -> None:
         rec = load_recording(self.csv_path)

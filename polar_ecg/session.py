@@ -308,8 +308,14 @@ class Session:
         if self._on_error:
             self._on_error(f"Recording error: {err_msg}")
 
+    async def disconnect(self) -> None:
+        """Stop streaming and disconnect underlying data source."""
+        await self.stop_streaming()
+        if self._source and hasattr(self._source, "disconnect"):
+            await self._source.disconnect()
+
     async def shutdown(self) -> None:
-        """Clean shutdown of session, streams, and recording."""
+        """Clean shutdown of session, streams, recording, and source connection."""
         if self._recorder.is_recording:
             try:
                 self.stop_recording()
@@ -317,6 +323,6 @@ class Session:
                 logger.error("Error stopping recorder during shutdown: %s", e)
 
         try:
-            await self.stop_streaming()
+            await self.disconnect()
         except Exception as e:  # noqa: BLE001
-            logger.error("Error stopping streaming during shutdown: %s", e)
+            logger.error("Error during session disconnect: %s", e)

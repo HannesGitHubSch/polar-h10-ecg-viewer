@@ -407,15 +407,22 @@ class MainWindow(QMainWindow):
             on_done=_on_connected,
         )
 
+    async def _async_disconnect(self) -> None:
+        await self.session.disconnect()
+        await self.h10_backend.disconnect()
+
     def _on_disconnect(self) -> None:
         self.statusBar().showMessage("Disconnecting...")
 
         def _on_disconnected(_):
-            self.apply_state(AppState.IDLE)
+            if self.discovered_devices:
+                self.apply_state(AppState.READY)
+            else:
+                self.apply_state(AppState.IDLE)
             self.statusBar().showMessage("Disconnected.")
 
         self.runner.submit(
-            self.session.shutdown(),
+            self._async_disconnect(),
             op_name="disconnect_device",
             on_done=_on_disconnected,
         )
@@ -551,7 +558,10 @@ class MainWindow(QMainWindow):
     def _handle_async_error(self, op: str, err: str) -> None:
         self.statusBar().showMessage(f"Failed {op}: {err}")
         QMessageBox.critical(self, "Bluetooth Operation Error", f"Operation '{op}' failed:\n{err}")
-        self.apply_state(AppState.IDLE)
+        if self.discovered_devices:
+            self.apply_state(AppState.READY)
+        else:
+            self.apply_state(AppState.IDLE)
 
     def _on_display_tick(self) -> None:
         """Executed at DISPLAY_FPS to smoothly redraw plotting curves."""

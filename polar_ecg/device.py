@@ -77,6 +77,20 @@ class PolarH10:
         Connect to a specified BLEDevice.
         Directly uses discovered BLEDevice to avoid redundant scanning.
         """
+        if self.is_connected:
+            if self._ble_device and self._ble_device.address == ble_device.address:
+                logger.info("Already connected to %s (%s)", ble_device.name, ble_device.address)
+                return
+            logger.info("Disconnecting previous connection before connecting to %s...", ble_device.name)
+            await self.disconnect()
+
+        if self._polar_device:
+            try:
+                await self._polar_device.disconnect()
+            except Exception:
+                pass
+            self._polar_device = None
+
         logger.info("Connecting to %s (%s)...", ble_device.name, ble_device.address)
         self._ble_device = ble_device
         self._polar_device = _PolarDeviceWithDisconnect(ble_device, on_disconnect)

@@ -56,3 +56,65 @@ def test_polar_h10_connect_timeout():
             await h10.connect(dummy_device, on_disconnect=lambda: None, timeout=0.1)
 
     asyncio.run(run_timeout())
+
+
+def test_polar_h10_already_connected_is_noop():
+    from unittest.mock import PropertyMock
+
+    async def run_test():
+        dummy_device = BLEDevice("00:11:22:33:44:55", "Polar H10", None)
+        h10 = PolarH10()
+
+        with patch.object(_PolarDeviceWithDisconnect, "connect", new_callable=AsyncMock) as mock_connect:
+            await h10.connect(dummy_device, on_disconnect=lambda: None)
+            assert mock_connect.call_count == 1
+
+            # Mock is_connected to True
+            with patch.object(PolarH10, "is_connected", new_callable=PropertyMock, return_value=True):
+                assert h10.is_connected
+
+                # Second connect with same device should be a no-op
+                await h10.connect(dummy_device, on_disconnect=lambda: None)
+                assert mock_connect.call_count == 1
+
+    asyncio.run(run_test())
+
+
+def test_device_source_start_does_not_reconnect_if_already_connected():
+    from unittest.mock import MagicMock
+    from polar_ecg.sources import DeviceSource
+
+    async def run_test():
+        dummy_device = BLEDevice("00:11:22:33:44:55", "Polar H10", None)
+        h10 = PolarH10()
+        h10._polar_device = MagicMock()
+        h10._polar_device._client = MagicMock(is_connected=True)
+        h10.start_ecg = AsyncMock()
+        h10.start_hr = AsyncMock()
+        h10.connect = AsyncMock()
+        h10.stop_all = AsyncMock()
+        h10.disconnect = AsyncMock()
+
+        source = DeviceSource(
+            h10=h10,
+            ble_device=dummy_device,
+            on_frame=lambda f: None,
+            on_hr=lambda hr: None,
+            on_disconnect=lambda r: None,
+        )
+
+        await source.start()
+        h10.connect.assert_not_called()
+        h10.start_ecg.assert_called_once()
+        h10.start_hr.assert_called_once()
+
+        # Stop streaming stops all streams but does NOT disconnect
+        await source.stop()
+        h10.stop_all.assert_called_once()
+        h10.disconnect.assert_not_called()
+
+        # Disconnect calls disconnect
+        await source.disconnect()
+        h10.disconnect.assert_called_once()
+
+    asyncio.run(run_test())

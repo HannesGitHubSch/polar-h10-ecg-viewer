@@ -60,9 +60,14 @@ def synth_ecg(
         r_time = r_idx / fs
         for amp, width, offset in components:
             center = r_time + offset
-            # Gaussian shape
-            wave = amp * np.exp(-0.5 * ((t - center) / width) ** 2)
-            ecg_clean += wave
+            # Truncate Gaussian at 5 * sigma (relative contribution < 0.0003)
+            half_width = 5.0 * width
+            i_start = max(0, int((center - half_width) * fs))
+            i_end = min(total_samples, int((center + half_width) * fs) + 1)
+            if i_start < i_end:
+                t_slice = t[i_start:i_end]
+                wave = amp * np.exp(-0.5 * ((t_slice - center) / width) ** 2)
+                ecg_clean[i_start:i_end] += wave
 
     if invert:
         ecg_clean = -ecg_clean

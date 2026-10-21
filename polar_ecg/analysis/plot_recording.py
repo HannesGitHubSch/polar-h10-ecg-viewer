@@ -55,7 +55,7 @@ def analyze_and_plot(
     duration = float(t_s[-1] - t_s[0])
     effective_fs = len(df) / duration if duration > 0 else 130.0
 
-    print(f"\n✓ Loaded {len(df)} samples from {in_path.name}")
+    print(f"\n[OK] Loaded {len(df)} samples from {in_path.name}")
     print(f"  Format version: v{rec.format_version}")
     print(f"  Participant ID: {rec.participant_id}")
     print(f"  Duration: {duration:.2f} seconds")
@@ -78,7 +78,7 @@ def analyze_and_plot(
             peak_times = t_s[peak_indices]
             peak_voltages = voltages[peak_indices]
         except ImportError:
-            print("⚠ neurokit2 not installed; falling back to builtin detector")
+            print("[!] neurokit2 not installed; falling back to builtin detector")
             detector = "builtin"
 
     if detector == "builtin":
@@ -87,7 +87,7 @@ def analyze_and_plot(
         peak_times = np.array([p.t_session_s for p in rpeaks])
         peak_voltages = np.array([p.voltage_uv for p in rpeaks])
 
-    print(f"\n💓 R-peak Detection ({detector}):")
+    print(f"\nR-peak Detection ({detector}):")
     print(f"  Found {len(peak_times)} R-peaks")
 
     # Compute BPM from detected R-peaks
@@ -182,7 +182,7 @@ def analyze_and_plot(
     # Save figure
     target_out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(target_out, dpi=150, bbox_inches="tight")
-    print(f"✓ Saved diagnostic plot to: {target_out}")
+    print(f"[OK] Saved diagnostic plot to: {target_out}")
 
     if show:
         print("\nDisplaying interactive plot (close window to exit)...")
@@ -192,6 +192,10 @@ def analyze_and_plot(
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description="Analyze and visualize Polar H10 ECG recording CSV.")
     parser.add_argument("csv_path", type=str, help="Path to recorded ECG CSV file")
     parser.add_argument("--out", type=str, default=None, help="Output PNG file path")
@@ -219,7 +223,7 @@ def main():
             show=not args.no_show,
         )
     except Exception as exc:  # noqa: BLE001
-        print(f"✗ Error: {exc}", file=sys.stderr)
+        print(f"[ERROR] {exc}", file=sys.stderr)
         sys.exit(1)
 
 

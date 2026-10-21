@@ -1,51 +1,48 @@
 """
 Configuration file for Polar ECG Viewer
+All parameters here can be modified to customize runtime behavior.
 """
 
-# ECG Streaming
-ECG_SAMPLE_RATE = 130  # Hz (130 or 250)
-ECG_RESOLUTION = 14    # bits
+# Device
+SCAN_TIMEOUT_S = 5.0
+CONNECT_TIMEOUT_S = 15.0
+DATA_WATCHDOG_S = 3.0
+AUTO_RECONNECT = True
+RECONNECT_BACKOFF_S = (1, 2, 4, 8, 15)
+RECORD_DEVICE_HR = True  # Also record H10 native HR / RR stream
 
-# Display Windows
-DISPLAY_WINDOW_SECONDS = 10  # Time window to show in plots
-ECG_BUFFER_SECONDS = 30      # Total buffer size (keep more than display)
-BPM_HISTORY_POINTS = 500     # Number of BPM points to keep
+# Signal
+ECG_FS_NOMINAL = 130.0  # Polar H10 ECG nominal sampling rate (130 Hz only)
+ECG_RESOLUTION = 14     # bits
 
-# Smooth Animation (Time-based scrolling)
-ENABLE_SMOOTH_SCROLLING = True   # Scroll plot continuously with real time
-SCROLL_UPDATE_INTERVAL_MS = 30   # Update X-axis every N ms (30ms = ~33 FPS)
-SMOOTH_SAMPLE_INSERTION = True   # Gradually insert samples over multiple frames
-SAMPLES_PER_FRAME = 5            # Max samples to add per frame (for smoothness)
+# Detection
+QRS_BANDPASS_HZ = (5.0, 15.0)  # Butterworth bandpass cutoff frequencies in Hz
+RPEAK_REFRACTORY_MS = 250      # Minimum refractory period in ms
+RR_MIN_MS = 273                # Min physiologically plausible RR in ms (~220 BPM)
+RR_MAX_MS = 2000               # Max physiologically plausible RR in ms (~30 BPM)
+BPM_SMOOTHING_BEATS = 3        # Number of recent accepted RR intervals to average for BPM
 
-# R-Peak Detection
-RPEAK_MIN_DISTANCE_MS = 300
-RPEAK_HEIGHT_MULTIPLIER = 0.5
-RPEAK_PROMINENCE_MULTIPLIER = 0.3
-RPEAK_BUFFER_SECONDS = 2
-
-# BPM Calculation
-BPM_SMOOTHING_WINDOW = 2     # Average over N RR intervals for smoother BPM
-BPM_AVERAGE_WINDOW_SECONDS = DISPLAY_WINDOW_SECONDS  # Window for "Add Average Line" button
-BPM_Y_AXIS_PADDING = 10      # BPM padding above/below min/max (±10 BPM)
-
-# BPM Display
-BPM_Y_RANGE = (40, 180)
-
-# ECG Display
-ECG_Y_RANGE = (-1000, 1000)
-
-# UI Defaults
-SHOW_RPEAKS_DEFAULT = False  # Show R-peak dots by default
+# Display
+DISPLAY_WINDOW_S = 10          # Visible time window in plots (seconds)
+DISPLAY_DELAY_S = 0.6          # Fixed display delay behind newest sample for smooth scrolling
+DISPLAY_FPS = 30               # GUI plot refresh rate (frames per second)
+ECG_BUFFER_S = 30              # Total buffer size in memory (seconds)
+BPM_HISTORY_POINTS = 500       # Maximum number of BPM points kept in plot history
+SHOW_RPEAKS_DEFAULT = False    # Whether R-peak markers are shown by default
+BPM_Y_AXIS_PADDING = 10        # Vertical margin around visible BPM min/max (±10 BPM)
+BPM_AVERAGE_WINDOW_S = 10      # Window in seconds for "Add Average Line" calculation
 
 # UI Colors (hex)
-COLOR_ECG_LINE = '#2E86AB'
-COLOR_RPEAK_MARKER = '#FF0000'
-COLOR_BPM_LINE = '#A23B72'
-COLOR_AVERAGE_LINE = '#F18F01'
+COLOR_ECG_LINE = "#2E86AB"
+COLOR_RPEAK_MARKER = "#FF0000"
+COLOR_BPM_LINE = "#A23B72"
+COLOR_AVERAGE_LINE = "#F18F01"
 
-# Device
-DEVICE_SCAN_TIMEOUT = 5.0
-DEVICE_CONNECTION_TIMEOUT = 10.0
+# Recording
+RECORDING_FLUSH_INTERVAL_S = 1.0  # Periodic disk flush interval in seconds
 
-# Debug
-DEBUG_PEAK_DETECTION = False  # Print R-peak detection debug info
+# Lab Streaming Layer (LSL)
+LSL_ENABLED = False
+
+# Logging
+LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR

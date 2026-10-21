@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "polar-ecg-viewer"
+version = "0.2.0"
+description = "Real-time ECG visualization and recording tool for Polar H10"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "polar-python==1.1.1",
+    "bleak>=0.21.0,<4.0.0",
+    "PyQt6>=6.6.0",
+    "pyqtgraph>=0.13.3",
+    "numpy>=1.24.0",
+    "scipy>=1.11.0",
+    "pandas>=2.0.0",
+    "matplotlib>=3.7.0",
+]
+
+[project.optional-dependencies]
+lsl = [
+    "pylsl>=1.16.0",
+]
+analysis = [
+    "neurokit2>=0.2.7",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-qt>=4.4.0",
+    "ruff>=0.6.0",
+]
+
+[project.scripts]
+polar-ecg = "polar_ecg.app:main"
+polar-plot = "polar_ecg.analysis.plot_recording:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["polar_ecg*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+extend-exclude = ["polar_backend.py", "main.py"]

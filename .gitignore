@@ -36,10 +36,19 @@ ENV/
 
 # Recordings (don't commit participant data!)
 ECG_*.csv
+*.csv.partial
+ECG_*_meta.json
+ECG_*_hr.csv
+ECG_*_beats.csv
 *_plot.png
+recordings/
 
 # Logs
 *.log
+logs/
+
+# Scratch files
+scratch/
 
 # OS
 Thumbs.db

@@ -4,3 +4,4 @@ neurokit2>=0.2.7
 pytest>=8.0.0
 pytest-qt>=4.4.0
 ruff>=0.6.0
+

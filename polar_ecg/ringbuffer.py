@@ -89,3 +89,4 @@ class RingBuffer:
         x_ordered = np.concatenate((self._x[self._head :], self._x[: self._head]))
         y_ordered = np.concatenate((self._y[self._head :], self._y[: self._head]))
         return x_ordered, y_ordered
+

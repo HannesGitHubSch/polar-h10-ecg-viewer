@@ -39,3 +39,4 @@ ENABLED_CONTROLS: dict[AppState, set[str]] = {
     AppState.RECONNECTING: {"disconnect", "record", "mark"},
     AppState.ERROR: {"scan", "device_combo", "connect", "disconnect"},
 }
+

@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main, overhaul]
+  pull_request:
+    branches: [main, overhaul]
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install system dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 \
+            libgl1 \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-xfixes0 \
+            libxcb-xinerama0
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Lint with Ruff
+        run: |
+          python -m ruff check .
+
+      - name: Run Test Suite
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -m pytest -v
+
+      - name: Headless End-to-End Simulation Run
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python main.py --simulate --autostart --record scratch/smoke_ci.csv --participant CI_TEST --duration 6
+          python plot_recording.py scratch/smoke_ci.csv --no-show
+

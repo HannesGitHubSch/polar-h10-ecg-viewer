@@ -41,3 +41,4 @@ def setup_logging(level: str = "INFO", log_dir: str | Path = "logs") -> logging.
         root_logger.addHandler(file_handler)
 
     return logging.getLogger("polar_ecg")
+
